@@ -98,7 +98,7 @@
       width: 90px; 
       font-size: 14px;
     }
-    
+
     .switch {
       position: relative;
       display: inline-block;
@@ -235,7 +235,7 @@
     let activeSources = {};
     let gainNodes = {};
     let currentVoices = [];
-    
+
     let isPlaying = false;
     let isSeeking = false;
     let playbackStartTime = 0;
@@ -309,7 +309,7 @@
 
         const firstVoiceId = currentSong.voices[0].id;
         songDuration = audioBuffers[firstVoiceId].duration;
-        
+
         seekBar.max = songDuration;
         seekBar.disabled = false;
 
@@ -344,7 +344,7 @@
         const gainNode = audioCtx.createGain();
 
         source.buffer = audioBuffers[voice.id];
-        
+
         source.connect(gainNode);
         gainNode.connect(audioCtx.destination);
 
@@ -353,7 +353,7 @@
         gainNode.gain.value = isMuted ? 0 : volVal;
 
         source.start(0, offset);
-        
+
         activeSources[voice.id] = source;
         gainNodes[voice.id] = gainNode;
       });
@@ -388,7 +388,7 @@
       if (!gainNodes[voiceId]) return;
       const isEnabled = document.getElementById(`toggle-${voiceId}`).checked;
       const volVal = parseFloat(document.getElementById(`vol-${voiceId}`).value);
-      
+
       const targetGain = isEnabled ? volVal : 0;
       gainNodes[voiceId].gain.setTargetAtTime(targetGain, audioCtx.currentTime, 0.02);
     }
