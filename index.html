@@ -30,6 +30,7 @@
 
     h2 { margin-top: 0; text-align: center; }
 
+    /* Album Selector Dropdown */
     .song-select-container {
       margin-bottom: 20px;
     }
@@ -44,6 +45,7 @@
       cursor: pointer;
     }
 
+    /* Main Timeline Seek Bar */
     .timeline-container {
       margin-bottom: 24px;
     }
@@ -60,6 +62,7 @@
       cursor: pointer;
     }
 
+    /* Transport Controls */
     .main-controls {
       display: flex;
       justify-content: center;
@@ -79,6 +82,7 @@
     .btn-main:hover { opacity: 0.9; }
     .btn-main:disabled { background-color: #ccc; cursor: not-allowed; }
 
+    /* Dynamic Tracks Grid */
     .tracks-grid {
       display: flex;
       flex-direction: column;
@@ -99,6 +103,7 @@
       font-size: 14px;
     }
     
+    /* Toggle Switch */
     .switch {
       position: relative;
       display: inline-block;
@@ -125,6 +130,7 @@
     input:checked + .slider { background-color: #34c759; }
     input:checked + .slider:before { transform: translateX(20px); }
 
+    /* Track Volume Slider */
     .volume-slider {
       flex-grow: 1;
       accent-color: var(--primary);
@@ -134,6 +140,9 @@
 </head>
 <body>
 
+<!-- Hidden dummy audio element to force iOS to route sound to the media speaker -->
+<audio id="iosAudioShim" src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=" loop playsinline></audio>
+	
   <div class="card">
     <h2>Antonín Dvořák: Misa en re mayor, Op. 86</h2>
 
@@ -141,6 +150,7 @@
     <div class="song-select-container">
       <label for="songSelect">Elegir movimiento:</label>
       <select id="songSelect" onchange="changeSong(this.value)">
+        <!-- Dynamic options populated via JavaScript -->
       </select>
     </div>
 
@@ -162,10 +172,11 @@
     <div class="tracks-grid" id="tracksContainer"></div>
   </div>
 
-  <!-- Hidden Container for HTML5 Audio Elements -->
-  <div id="audioElementsContainer" style="display:none;"></div>
-
   <script>
+    // -------------------------------------------------------------
+    // ALBUM CONFIGURATION
+    // Folder paths and custom voice list per movement
+    // -------------------------------------------------------------
     const ALBUM = [
       {
         title: "I. Kyrie",
@@ -188,7 +199,7 @@
           { id: "tenor1",   name: "Tenor 1",   file: "tenor1.mp3" },
           { id: "tenor2",   name: "Tenor 2",   file: "tenor2.mp3" },
           { id: "bass1",    name: "Barítono",    file: "bass1.mp3" },
-          { id: "bass2",    name: "Bajo",    file: "bass2.mp3" }
+          { id: "bass2",    name: "Bajo 2",    file: "bass2.mp3" }
         ]
       },
       {
@@ -233,22 +244,31 @@
       }
     ];
 
-    let audioElements = {};
+    // Web Audio Global Variables
+    let audioCtx;
+    let audioBuffers = {};
+    let activeSources = {};
+    let gainNodes = {};
     let currentVoices = [];
+    
+    // Playback State
     let isPlaying = false;
     let isSeeking = false;
+    let playbackStartTime = 0;
+    let pausedAtOffset = 0;
     let songDuration = 0;
     let animationFrameId;
 
+    // Elements
     const playBtn = document.getElementById('playBtn');
     const songSelect = document.getElementById('songSelect');
     const seekBar = document.getElementById('seekBar');
     const currentTimeEl = document.getElementById('currentTime');
     const durationEl = document.getElementById('duration');
     const container = document.getElementById('tracksContainer');
-    const audioHolder = document.getElementById('audioElementsContainer');
 
     function initUI() {
+      // Build dropdown choices
       ALBUM.forEach((song, idx) => {
         const option = document.createElement('option');
         option.value = idx;
@@ -257,6 +277,7 @@
       });
     }
 
+    // Dynamically rebuild the Voice Controls UI for the active movement
     function renderVoiceControls(voices) {
       container.innerHTML = '';
       currentVoices = voices;
@@ -276,110 +297,150 @@
       });
     }
 
-    function loadSong(songIndex) {
+    // Load Audio Files for Selected Song
+    async function loadSong(songIndex) {
       stopPlayback();
+      pausedAtOffset = 0;
+      updateTimelineUI(0, 0);
+
       const currentSong = ALBUM[songIndex];
       renderVoiceControls(currentSong.voices);
-
-      audioHolder.innerHTML = '';
-      audioElements = {};
 
       playBtn.innerText = "Cargando audios...";
       playBtn.disabled = true;
       seekBar.disabled = true;
 
-      let loadedCount = 0;
-      const totalTracks = currentSong.voices.length;
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
 
-      currentSong.voices.forEach(voice => {
-        const audio = document.createElement('audio');
-        audio.src = currentSong.folder + voice.file;
-        audio.preload = "auto";
-        audio.id = `audio-${voice.id}`;
-        // Essential iOS flags for media playback
-        audio.setAttribute('playsinline', '');
-        audio.setAttribute('webkit-playsinline', '');
+      audioBuffers = {};
 
-        audioHolder.appendChild(audio);
-        audioElements[voice.id] = audio;
-
-        audio.addEventListener('loadedmetadata', () => {
-          loadedCount++;
-          if (loadedCount === 1) {
-            // Master duration from primary track
-            songDuration = audio.duration;
-            seekBar.max = songDuration;
-            durationEl.innerText = formatTime(songDuration);
-          }
-          if (loadedCount === totalTracks) {
-            playBtn.innerText = "Reproducir";
-            playBtn.disabled = false;
-            seekBar.disabled = false;
-          }
+      try {
+        const fetchPromises = currentSong.voices.map(async (voice) => {
+          const url = currentSong.folder + voice.file;
+          const res = await fetch(url);
+          const arrayBuf = await res.arrayBuffer();
+          const audioBuf = await audioCtx.decodeAudioData(arrayBuf);
+          audioBuffers[voice.id] = audioBuf;
         });
-      });
-    }
 
-    function togglePlay() {
-      if (isPlaying) {
-        stopPlayback();
-      } else {
-        startPlayback();
+        await Promise.all(fetchPromises);
+
+        // Get duration from the first loaded buffer
+        const firstVoiceId = currentSong.voices[0].id;
+        songDuration = audioBuffers[firstVoiceId].duration;
+        
+        seekBar.max = songDuration;
+        seekBar.disabled = false;
+
+        durationEl.innerText = formatTime(songDuration);
+        playBtn.innerText = "Reproducir";
+        playBtn.disabled = false;
+      } catch (err) {
+        playBtn.innerText = "Error al cargar";
+        console.error("Error de decodificación:", err);
       }
     }
 
-    function startPlayback() {
-      // Synchronize all tracks and play
-      const masterTime = audioElements[currentVoices[0].id].currentTime;
-      
-      const playPromises = currentVoices.map(voice => {
-        const audio = audioElements[voice.id];
-        audio.currentTime = masterTime;
-        updateVolume(voice.id);
-        return audio.play();
+    // Playback Engine
+    function startPlayback(offset = 0) {
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+
+      playbackStartTime = audioCtx.currentTime - offset;
+
+      currentVoices.forEach(voice => {
+        const source = audioCtx.createBufferSource();
+        const gainNode = audioCtx.createGain();
+
+        source.buffer = audioBuffers[voice.id];
+        
+        source.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+
+        const isMuted = !document.getElementById(`toggle-${voice.id}`).checked;
+        const volVal = parseFloat(document.getElementById(`vol-${voice.id}`).value);
+        gainNode.gain.value = isMuted ? 0 : volVal;
+
+        source.start(0, offset);
+        
+        activeSources[voice.id] = source;
+        gainNodes[voice.id] = gainNode;
       });
 
-      Promise.all(playPromises).then(() => {
-        isPlaying = true;
-        playBtn.innerText = "Pausar";
-        requestAnimationFrame(updateTimelineLoop);
-      }).catch(err => {
-        console.error("Reproducción detenida:", err);
-      });
+      isPlaying = true;
+      playBtn.innerText = "Pausar";
+      requestAnimationFrame(updateTimelineLoop);
     }
 
     function stopPlayback() {
       currentVoices.forEach(voice => {
-        const audio = audioElements[voice.id];
-        if (audio) audio.pause();
+        if (activeSources[voice.id]) {
+          try { activeSources[voice.id].stop(); } catch(e) {}
+        }
       });
       isPlaying = false;
       playBtn.innerText = "Reproducir";
       cancelAnimationFrame(animationFrameId);
     }
 
+	// Function to safely unlock iOS Audio Context
+	async function unlockAudioContext() {
+	  if (!audioCtx) return;
+
+	  // Force iOS to switch audio session from 'Ringer' to 'Media Speaker'
+	  const shim = document.getElementById('iosAudioShim');
+	  if (shim) {
+		shim.play().catch(() => {});
+	  }
+
+	  if (audioCtx.state === 'suspended') {
+		await audioCtx.resume();
+	  }
+	}
+
+//	  // iOS Safari "silent buffer" trick to guarantee context activation
+//	  const buffer = audioCtx.createBuffer(1, 1, 22050);
+//	  const source = audioCtx.createBufferSource();
+//	  source.buffer = buffer;
+//	  source.connect(audioCtx.destination);
+//	  source.start(0);
+//	}
+
+	async function togglePlay() {
+	  // 1. Always unlock iOS audio context first on user interaction
+	  await unlockAudioContext();
+
+	  if (isPlaying) {
+		pausedAtOffset = audioCtx.currentTime - playbackStartTime;
+		if (pausedAtOffset >= songDuration) pausedAtOffset = 0;
+		stopPlayback();
+	  } else {
+		startPlayback(pausedAtOffset);
+	  }
+	}
+
     function updateVolume(voiceId) {
-      const audio = audioElements[voiceId];
-      if (!audio) return;
-      
+      if (!gainNodes[voiceId]) return;
       const isEnabled = document.getElementById(`toggle-${voiceId}`).checked;
       const volVal = parseFloat(document.getElementById(`vol-${voiceId}`).value);
       
-      audio.volume = isEnabled ? volVal : 0;
+      const targetGain = isEnabled ? volVal : 0;
+      gainNodes[voiceId].gain.setTargetAtTime(targetGain, audioCtx.currentTime, 0.02);
     }
 
     function updateTimelineLoop() {
       if (isPlaying && !isSeeking) {
-        const primaryAudio = audioElements[currentVoices[0].id];
-        if (primaryAudio) {
-          const currentPos = primaryAudio.currentTime;
-          if (currentPos >= songDuration) {
-            stopPlayback();
-            updateTimelineUI(0, songDuration);
-            return;
-          }
-          updateTimelineUI(currentPos, songDuration);
+        const currentPos = audioCtx.currentTime - playbackStartTime;
+        if (currentPos >= songDuration) {
+          stopPlayback();
+          pausedAtOffset = 0;
+          updateTimelineUI(0, songDuration);
+          return;
         }
+        updateTimelineUI(currentPos, songDuration);
         animationFrameId = requestAnimationFrame(updateTimelineLoop);
       }
     }
@@ -397,13 +458,14 @@
 
     function onSeekChange() {
       const seekTo = parseFloat(seekBar.value);
-      
-      currentVoices.forEach(voice => {
-        const audio = audioElements[voice.id];
-        if (audio) audio.currentTime = seekTo;
-      });
+      pausedAtOffset = seekTo;
 
-      updateTimelineUI(seekTo, songDuration);
+      if (isPlaying) {
+        stopPlayback();
+        startPlayback(seekTo);
+      } else {
+        updateTimelineUI(seekTo, songDuration);
+      }
       isSeeking = false;
     }
 
@@ -412,7 +474,6 @@
     }
 
     function formatTime(secs) {
-      if (isNaN(secs)) return "0:00";
       const m = Math.floor(secs / 60);
       const s = Math.floor(secs % 60);
       return `${m}:${s < 10 ? '0' : ''}${s}`;
@@ -420,6 +481,7 @@
 
     playBtn.addEventListener('click', togglePlay);
 
+    // Initial setup
     initUI();
     loadSong(0);
   </script>
