@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Antonín Dvořák - Misa en re mayor, Op. 86</title>
+  <style>
+    :root {
+      --primary: #007aff;
+      --bg: #f4f4f7;
+      --card-bg: #ffffff;
+      --border: #e5e5ea;
+    }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 620px;
+      margin: 30px auto;
+      padding: 0 16px;
+      background: var(--bg);
+      color: #333;
+    }
+
+    .card {
+      background: var(--card-bg);
+      padding: 24px;
+      border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+    }
+
+    h2 { margin-top: 0; text-align: center; }
+
+    /* Album Selector Dropdown */
+    .song-select-container {
+      margin-bottom: 20px;
+    }
+    label { font-weight: 600; display: block; margin-bottom: 6px; }
+    select {
+      width: 100%;
+      padding: 10px 12px;
+      font-size: 15px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: #f9f9fb;
+      cursor: pointer;
+    }
+
+    /* Main Timeline Seek Bar */
+    .timeline-container {
+      margin-bottom: 24px;
+    }
+    .time-display {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: #666;
+      margin-top: 4px;
+    }
+    .seek-bar {
+      width: 100%;
+      accent-color: var(--primary);
+      cursor: pointer;
+    }
+
+    /* Transport Controls */
+    .main-controls {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 24px;
+    }
+    .btn-main {
+      padding: 12px 32px;
+      font-size: 16px;
+      font-weight: bold;
+      color: white;
+      background-color: var(--primary);
+      border: none;
+      border-radius: 24px;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    .btn-main:hover { opacity: 0.9; }
+    .btn-main:disabled { background-color: #ccc; cursor: not-allowed; }
+
+    /* Dynamic Tracks Grid */
+    .tracks-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .track-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 14px;
+      background: #f9f9fb;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+    }
+    .track-name { 
+      font-weight: 600; 
+      width: 90px; 
+      font-size: 14px;
+    }
+    
+    /* Toggle Switch */
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 44px;
+      height: 24px;
+      flex-shrink: 0;
+    }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-color: #ccc;
+      transition: .3s;
+      border-radius: 24px;
+    }
+    .slider:before {
+      position: absolute; content: "";
+      height: 18px; width: 18px;
+      left: 3px; bottom: 3px;
+      background-color: white;
+      transition: .3s;
+      border-radius: 50%;
+    }
+    input:checked + .slider { background-color: #34c759; }
+    input:checked + .slider:before { transform: translateX(20px); }
+
+    /* Track Volume Slider */
+    .volume-slider {
+      flex-grow: 1;
+      accent-color: var(--primary);
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <h2>Dvořák: Misa en re mayor, Op. 86</h2>
+
+    <!-- 1. Song Selector -->
+    <div class="song-select-container">
+      <label for="songSelect">Elegir movimiento:</label>
+      <select id="songSelect" onchange="changeSong(this.value)">
+        <!-- Dynamic options populated via JavaScript -->
+      </select>
+    </div>
+
+    <!-- 2. Main Timeline Bar -->
+    <div class="timeline-container">
+      <input type="range" id="seekBar" class="seek-bar" value="0" min="0" step="0.1" disabled oninput="onSeekInput()" onchange="onSeekChange()">
+      <div class="time-display">
+        <span id="currentTime">0:00</span>
+        <span id="duration">0:00</span>
+      </div>
+    </div>
+
+    <!-- 3. Play / Pause Button -->
+    <div class="main-controls">
+      <button id="playBtn" class="btn-main" disabled>Cargando...</button>
+    </div>
+
+    <!-- 4. Dynamic Voice Controls Container -->
+    <div class="tracks-grid" id="tracksContainer"></div>
+  </div>
+
+  <script>
+    // -------------------------------------------------------------
+    // ALBUM CONFIGURATION
+    // Folder paths and custom voice list per movement
+    // -------------------------------------------------------------
+    const ALBUM = [
+      {
+        title: "I. Kyrie",
+        folder: "audios/i_kyrie/",
+        voices: [
+          { id: "soprano", name: "Soprano", file: "soprano.mp3" },
+          { id: "alto",    name: "Contralto",    file: "alto.mp3" },
+          { id: "tenor",   name: "Tenor",   file: "tenor.mp3" },
+          { id: "bass",    name: "Bajo",    file: "bass.mp3" }
+        ]
+      },
+      {
+        title: "II. Gloria (Double Choir)",
+        folder: "audios/ii_gloria/",
+        voices: [
+          { id: "soprano1", name: "Soprano 1", file: "soprano1.mp3" },
+          { id: "soprano2", name: "Soprano 2", file: "soprano2.mp3" },
+          { id: "alto1",    name: "Contralto 1",    file: "alto1.mp3" },
+          { id: "alto2",    name: "Contralto 2",    file: "alto2.mp3" },
+          { id: "tenor1",   name: "Tenor 1",   file: "tenor1.mp3" },
+          { id: "tenor2",   name: "Tenor 2",   file: "tenor2.mp3" },
+          { id: "bass1",    name: "Barítono",    file: "bass1.mp3" },
+          { id: "bass2",    name: "Bajo 2",    file: "bass2.mp3" }
+        ]
+      },
+      {
+        title: "III. Credo",
+        folder: "audios/iii_credo/",
+        voices: [
+          { id: "soprano", name: "Soprano", file: "soprano.mp3" },
+          { id: "alto",    name: "Contralto",    file: "alto.mp3" },
+          { id: "tenor",   name: "Tenor",   file: "tenor.mp3" },
+          { id: "bass",    name: "Bajo",    file: "bass.mp3" }
+        ]
+      },
+      {
+        title: "IV. Sanctus",
+        folder: "audios/iv_sanctus/",
+        voices: [
+          { id: "soprano", name: "Soprano", file: "soprano.mp3" },
+          { id: "alto",    name: "Contralto",    file: "alto.mp3" },
+          { id: "tenor",   name: "Tenor",   file: "tenor.mp3" },
+          { id: "bass",    name: "Bajo",    file: "bass.mp3" }
+        ]
+      },
+      {
+        title: "V. Benedictus",
+        folder: "audios/v_benedictus/",
+        voices: [
+          { id: "soprano", name: "Soprano", file: "soprano.mp3" },
+          { id: "alto",    name: "Contralto",    file: "alto.mp3" },
+          { id: "tenor",   name: "Tenor",   file: "tenor.mp3" },
+          { id: "bass",    name: "Bajo",    file: "bass.mp3" }
+        ]
+      },
+      {
+        title: "VI. Agnus Dei",
+        folder: "audios/vi_agnus_dei/",
+        voices: [
+          { id: "soprano", name: "Soprano", file: "soprano.mp3" },
+          { id: "alto",    name: "Contralto",    file: "alto.mp3" },
+          { id: "tenor",   name: "Tenor",   file: "tenor.mp3" },
+          { id: "bass",    name: "Bajo",    file: "bass.mp3" }
+        ]
+      }
+    ];
+
+    // Web Audio Global Variables
+    let audioCtx;
+    let audioBuffers = {};
+    let activeSources = {};
+    let gainNodes = {};
+    let currentVoices = [];
+    
+    // Playback State
+    let isPlaying = false;
+    let isSeeking = false;
+    let playbackStartTime = 0;
+    let pausedAtOffset = 0;
+    let songDuration = 0;
+    let animationFrameId;
+
+    // Elements
+    const playBtn = document.getElementById('playBtn');
+    const songSelect = document.getElementById('songSelect');
+    const seekBar = document.getElementById('seekBar');
+    const currentTimeEl = document.getElementById('currentTime');
+    const durationEl = document.getElementById('duration');
+    const container = document.getElementById('tracksContainer');
+
+    function initUI() {
+      // Build dropdown choices
+      ALBUM.forEach((song, idx) => {
+        const option = document.createElement('option');
+        option.value = idx;
+        option.innerText = song.title;
+        songSelect.appendChild(option);
+      });
+    }
+
+    // Dynamically rebuild the Voice Controls UI for the active movement
+    function renderVoiceControls(voices) {
+      container.innerHTML = '';
+      currentVoices = voices;
+
+      voices.forEach(voice => {
+        const row = document.createElement('div');
+        row.className = 'track-row';
+        row.innerHTML = `
+          <span class="track-name">${voice.name}</span>
+          <label class="switch">
+            <input type="checkbox" id="toggle-${voice.id}" checked onchange="updateVolume('${voice.id}')">
+            <span class="slider"></span>
+          </label>
+          <input type="range" id="vol-${voice.id}" class="volume-slider" min="0" max="1" step="0.01" value="1" oninput="updateVolume('${voice.id}')">
+        `;
+        container.appendChild(row);
+      });
+    }
+
+    // Load Audio Files for Selected Song
+    async function loadSong(songIndex) {
+      stopPlayback();
+      pausedAtOffset = 0;
+      updateTimelineUI(0, 0);
+
+      const currentSong = ALBUM[songIndex];
+      renderVoiceControls(currentSong.voices);
+
+      playBtn.innerText = "Cargando audios...";
+      playBtn.disabled = true;
+      seekBar.disabled = true;
+
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+
+      audioBuffers = {};
+
+      try {
+        const fetchPromises = currentSong.voices.map(async (voice) => {
+          const url = currentSong.folder + voice.file;
+          const res = await fetch(url);
+          const arrayBuf = await res.arrayBuffer();
+          const audioBuf = await audioCtx.decodeAudioData(arrayBuf);
+          audioBuffers[voice.id] = audioBuf;
+        });
+
+        await Promise.all(fetchPromises);
+
+        // Get duration from the first loaded buffer
+        const firstVoiceId = currentSong.voices[0].id;
+        songDuration = audioBuffers[firstVoiceId].duration;
+        
+        seekBar.max = songDuration;
+        seekBar.disabled = false;
+
+        durationEl.innerText = formatTime(songDuration);
+        playBtn.innerText = "Play";
+        playBtn.disabled = false;
+      } catch (err) {
+        playBtn.innerText = "Error al cargar";
+        console.error("Error de decodificación:", err);
+      }
+    }
+
+    // Playback Engine
+    function startPlayback(offset = 0) {
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+
+      playbackStartTime = audioCtx.currentTime - offset;
+
+      currentVoices.forEach(voice => {
+        const source = audioCtx.createBufferSource();
+        const gainNode = audioCtx.createGain();
+
+        source.buffer = audioBuffers[voice.id];
+        
+        source.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+
+        const isMuted = !document.getElementById(`toggle-${voice.id}`).checked;
+        const volVal = parseFloat(document.getElementById(`vol-${voice.id}`).value);
+        gainNode.gain.value = isMuted ? 0 : volVal;
+
+        source.start(0, offset);
+        
+        activeSources[voice.id] = source;
+        gainNodes[voice.id] = gainNode;
+      });
+
+      isPlaying = true;
+      playBtn.innerText = "Pausar";
+      requestAnimationFrame(updateTimelineLoop);
+    }
+
+    function stopPlayback() {
+      currentVoices.forEach(voice => {
+        if (activeSources[voice.id]) {
+          try { activeSources[voice.id].stop(); } catch(e) {}
+        }
+      });
+      isPlaying = false;
+      playBtn.innerText = "Reproducir";
+      cancelAnimationFrame(animationFrameId);
+    }
+
+    function togglePlay() {
+      if (isPlaying) {
+        pausedAtOffset = audioCtx.currentTime - playbackStartTime;
+        if (pausedAtOffset >= songDuration) pausedAtOffset = 0;
+        stopPlayback();
+      } else {
+        startPlayback(pausedAtOffset);
+      }
+    }
+
+    function updateVolume(voiceId) {
+      if (!gainNodes[voiceId]) return;
+      const isEnabled = document.getElementById(`toggle-${voiceId}`).checked;
+      const volVal = parseFloat(document.getElementById(`vol-${voiceId}`).value);
+      
+      const targetGain = isEnabled ? volVal : 0;
+      gainNodes[voiceId].gain.setTargetAtTime(targetGain, audioCtx.currentTime, 0.02);
+    }
+
+    function updateTimelineLoop() {
+      if (isPlaying && !isSeeking) {
+        const currentPos = audioCtx.currentTime - playbackStartTime;
+        if (currentPos >= songDuration) {
+          stopPlayback();
+          pausedAtOffset = 0;
+          updateTimelineUI(0, songDuration);
+          return;
+        }
+        updateTimelineUI(currentPos, songDuration);
+        animationFrameId = requestAnimationFrame(updateTimelineLoop);
+      }
+    }
+
+    function updateTimelineUI(current, total) {
+      seekBar.value = current;
+      currentTimeEl.innerText = formatTime(current);
+      if (total) durationEl.innerText = formatTime(total);
+    }
+
+    function onSeekInput() {
+      isSeeking = true;
+      currentTimeEl.innerText = formatTime(seekBar.value);
+    }
+
+    function onSeekChange() {
+      const seekTo = parseFloat(seekBar.value);
+      pausedAtOffset = seekTo;
+
+      if (isPlaying) {
+        stopPlayback();
+        startPlayback(seekTo);
+      } else {
+        updateTimelineUI(seekTo, songDuration);
+      }
+      isSeeking = false;
+    }
+
+    function changeSong(index) {
+      loadSong(index);
+    }
+
+    function formatTime(secs) {
+      const m = Math.floor(secs / 60);
+      const s = Math.floor(secs % 60);
+      return `${m}:${s < 10 ? '0' : ''}${s}`;
+    }
+
+    playBtn.addEventListener('click', togglePlay);
+
+    // Initial setup
+    initUI();
+    loadSong(0);
+  </script>
+</body>
+</html>
