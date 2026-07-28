@@ -383,15 +383,34 @@
       cancelAnimationFrame(animationFrameId);
     }
 
-    function togglePlay() {
-      if (isPlaying) {
-        pausedAtOffset = audioCtx.currentTime - playbackStartTime;
-        if (pausedAtOffset >= songDuration) pausedAtOffset = 0;
-        stopPlayback();
-      } else {
-        startPlayback(pausedAtOffset);
-      }
-    }
+    // Function to safely unlock iOS Audio Context
+async function unlockAudioContext() {
+  if (!audioCtx) return;
+  
+  if (audioCtx.state === 'suspended') {
+    await audioCtx.resume();
+  }
+  
+  // iOS Safari "silent buffer" trick to guarantee context activation
+  const buffer = audioCtx.createBuffer(1, 1, 22050);
+  const source = audioCtx.createBufferSource();
+  source.buffer = buffer;
+  source.connect(audioCtx.destination);
+  source.start(0);
+}
+
+async function togglePlay() {
+  // 1. Always unlock iOS audio context first on user interaction
+  await unlockAudioContext();
+
+  if (isPlaying) {
+    pausedAtOffset = audioCtx.currentTime - playbackStartTime;
+    if (pausedAtOffset >= songDuration) pausedAtOffset = 0;
+    stopPlayback();
+  } else {
+    startPlayback(pausedAtOffset);
+  }
+}
 
     function updateVolume(voiceId) {
       if (!gainNodes[voiceId]) return;
