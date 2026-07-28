@@ -169,7 +169,7 @@
         folder: "audios/i_kyrie/",
         voices: [
           { id: "soprano", name: "Soprano", file: "soprano.mp3" },
-          { id: "alto",    name: "Contralto",    file: "alto.mp3" },
+          { id: "alto",    name: "Contralto", file: "alto.mp3" },
           { id: "tenor",   name: "Tenor",   file: "tenor.mp3" },
           { id: "bass",    name: "Bajo",    file: "bass.mp3" }
         ]
@@ -180,12 +180,12 @@
         voices: [
           { id: "soprano1", name: "Soprano 1", file: "soprano1.mp3" },
           { id: "soprano2", name: "Soprano 2", file: "soprano2.mp3" },
-          { id: "alto1",    name: "Contralto 1",    file: "alto1.mp3" },
-          { id: "alto2",    name: "Contralto 2",    file: "alto2.mp3" },
+          { id: "alto1",    name: "Contralto 1", file: "alto1.mp3" },
+          { id: "alto2",    name: "Contralto 2", file: "alto2.mp3" },
           { id: "tenor1",   name: "Tenor 1",   file: "tenor1.mp3" },
           { id: "tenor2",   name: "Tenor 2",   file: "tenor2.mp3" },
-          { id: "bass1",    name: "Barítono",    file: "bass1.mp3" },
-          { id: "bass2",    name: "Bajo",    file: "bass2.mp3" }
+          { id: "bass1",    name: "Barítono",  file: "bass1.mp3" },
+          { id: "bass2",    name: "Bajo",      file: "bass2.mp3" }
         ]
       },
       {
@@ -193,7 +193,7 @@
         folder: "audios/iii_credo/",
         voices: [
           { id: "soprano", name: "Soprano", file: "soprano.mp3" },
-          { id: "alto",    name: "Contralto",    file: "alto.mp3" },
+          { id: "alto",    name: "Contralto", file: "alto.mp3" },
           { id: "tenor",   name: "Tenor",   file: "tenor.mp3" },
           { id: "bass",    name: "Bajo",    file: "bass.mp3" }
         ]
@@ -203,7 +203,7 @@
         folder: "audios/iv_sanctus/",
         voices: [
           { id: "soprano", name: "Soprano", file: "soprano.mp3" },
-          { id: "alto",    name: "Contralto",    file: "alto.mp3" },
+          { id: "alto",    name: "Contralto", file: "alto.mp3" },
           { id: "tenor",   name: "Tenor",   file: "tenor.mp3" },
           { id: "bass",    name: "Bajo",    file: "bass.mp3" }
         ]
@@ -213,7 +213,7 @@
         folder: "audios/v_benedictus/",
         voices: [
           { id: "soprano", name: "Soprano", file: "soprano.mp3" },
-          { id: "alto",    name: "Contralto",    file: "alto.mp3" },
+          { id: "alto",    name: "Contralto", file: "alto.mp3" },
           { id: "tenor",   name: "Tenor",   file: "tenor.mp3" },
           { id: "bass",    name: "Bajo",    file: "bass.mp3" }
         ]
@@ -223,7 +223,7 @@
         folder: "audios/vi_agnus_dei/",
         voices: [
           { id: "soprano", name: "Soprano", file: "soprano.mp3" },
-          { id: "alto",    name: "Contralto",    file: "alto.mp3" },
+          { id: "alto",    name: "Contralto", file: "alto.mp3" },
           { id: "tenor",   name: "Tenor",   file: "tenor.mp3" },
           { id: "bass",    name: "Bajo",    file: "bass.mp3" }
         ]
@@ -235,6 +235,7 @@
     let activeSources = {};
     let gainNodes = {};
     let currentVoices = [];
+    let iosSilentBypassElement = null;
 
     let isPlaying = false;
     let isSeeking = false;
@@ -322,11 +323,31 @@
       }
     }
 
-    // iOS Silent Mode Bypass Hack
-    function bypassIosSilentSwitch() {
-      const silentAudio = new Audio('data:audio/mp3;base64,SUQ3BAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4LjI5LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABCAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIC/84QREAAAAGkAAAAA0gAAAAAABe33v/');
-      silentAudio.loop = true;
-      silentAudio.play().catch(() => {});
+    // Force iOS Safari to switch from Ambient to Playback category
+    function enableIosPlaybackCategory() {
+      // 1. Modern W3C AudioSession API override (iOS 17+)
+      if (navigator.audioSession) {
+        try {
+          navigator.audioSession.type = 'playback';
+        } catch (e) {}
+      }
+
+      // 2. MediaElementSource Bridge hack for iOS Safari
+      if (!iosSilentBypassElement) {
+        iosSilentBypassElement = document.createElement('audio');
+        iosSilentBypassElement.setAttribute('playsinline', '');
+        iosSilentBypassElement.setAttribute('webkit-playsinline', '');
+        // 0.1s silent MP3 data URI
+        iosSilentBypassElement.src = 'data:audio/mp3;base64,SUQ3BAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4LjI5LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABCAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIC/84QREAAAAGkAAAAA0gAAAAAABe33v/';
+        iosSilentBypassElement.loop = true;
+        
+        try {
+          const source = audioCtx.createMediaElementSource(iosSilentBypassElement);
+          source.connect(audioCtx.destination);
+        } catch (e) {}
+      }
+
+      iosSilentBypassElement.play().catch(() => {});
     }
 
     function startPlayback(offset = 0) {
@@ -334,8 +355,8 @@
         audioCtx.resume();
       }
 
-      // Execute iOS Silent Switch override on play trigger
-      bypassIosSilentSwitch();
+      // Force iOS to ignore physical Silent Switch on play tap
+      enableIosPlaybackCategory();
 
       playbackStartTime = audioCtx.currentTime - offset;
 
@@ -369,6 +390,9 @@
           try { activeSources[voice.id].stop(); } catch(e) {}
         }
       });
+      if (iosSilentBypassElement) {
+        iosSilentBypassElement.pause();
+      }
       isPlaying = false;
       playBtn.innerText = "Reproducir";
       cancelAnimationFrame(animationFrameId);
