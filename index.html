@@ -140,6 +140,9 @@
 </head>
 <body>
 
+  <!-- Hidden dummy audio element to force iOS to route sound to the media speaker -->
+  <audio id="iosAudioShim" src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=" loop playsinline></audio>
+
   <div class="card">
     <h2>Antonín Dvořák: Misa en re mayor, Op. 86</h2>
 
@@ -383,34 +386,41 @@
       cancelAnimationFrame(animationFrameId);
     }
 
-    // Function to safely unlock iOS Audio Context
-async function unlockAudioContext() {
-  if (!audioCtx) return;
+  	// Function to safely unlock iOS Audio Context
+  	async function unlockAudioContext() {
+  	  if (!audioCtx) return;
   
-  if (audioCtx.state === 'suspended') {
-    await audioCtx.resume();
-  }
+  	  // Force iOS to switch audio session from 'Ringer' to 'Media Speaker'
+  	  const shim = document.getElementById('iosAudioShim');
+  	  if (shim) {
+  		shim.play().catch(() => {});
+  	  }
   
-  // iOS Safari "silent buffer" trick to guarantee context activation
-  const buffer = audioCtx.createBuffer(1, 1, 22050);
-  const source = audioCtx.createBufferSource();
-  source.buffer = buffer;
-  source.connect(audioCtx.destination);
-  source.start(0);
-}
-
-async function togglePlay() {
-  // 1. Always unlock iOS audio context first on user interaction
-  await unlockAudioContext();
-
-  if (isPlaying) {
-    pausedAtOffset = audioCtx.currentTime - playbackStartTime;
-    if (pausedAtOffset >= songDuration) pausedAtOffset = 0;
-    stopPlayback();
-  } else {
-    startPlayback(pausedAtOffset);
-  }
-}
+  	  if (audioCtx.state === 'suspended') {
+  		await audioCtx.resume();
+  	  }
+  	}
+  
+  //	  // iOS Safari "silent buffer" trick to guarantee context activation
+  //	  const buffer = audioCtx.createBuffer(1, 1, 22050);
+  //	  const source = audioCtx.createBufferSource();
+  //	  source.buffer = buffer;
+  //	  source.connect(audioCtx.destination);
+  //	  source.start(0);
+  //	}
+  
+  	async function togglePlay() {
+  	  // 1. Always unlock iOS audio context first on user interaction
+  	  await unlockAudioContext();
+  
+  	  if (isPlaying) {
+  		pausedAtOffset = audioCtx.currentTime - playbackStartTime;
+  		if (pausedAtOffset >= songDuration) pausedAtOffset = 0;
+  		stopPlayback();
+  	  } else {
+  		startPlayback(pausedAtOffset);
+  	  }
+  	}
 
     function updateVolume(voiceId) {
       if (!gainNodes[voiceId]) return;
